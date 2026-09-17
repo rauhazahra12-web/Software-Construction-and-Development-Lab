@@ -1,0 +1,1226 @@
+from dataclasses import dataclass
+from collections import deque
+import heapq
+
+# =========================
+# Shared validation / rules
+# =========================
+
+INVALID_MENU_MESSAGE = "Invalid option."
+INVALID_NUMBER_MESSAGE = "Invalid number. Please try again."
+NOT_ELIGIBLE_DONOR_CONDITIONS = {
+    "Diabetic",
+    "Hepatitis B Carrier",
+    "Hepatitis C Carrier",
+    "Cancer Survivor",
+    "Heart Disease",
+    "Kidney Disease",
+    "Liver Disease",
+}
+ORGAN_FRESHNESS_RULES = {
+    "Heart": 6,
+    "Kidney": 12,
+    "Liver": 12,
+    "Lung": 8,
+    "Cornea": 24,
+}
+
+
+def safe_input(prompt):
+    try:
+        return input(prompt)
+    except EOFError:
+        print("\nInput ended. Exiting.")
+        raise SystemExit
+
+
+def read_int(prompt, minimum=None, maximum=None):
+    while True:
+        raw_value = safe_input(prompt).strip()
+
+        if raw_value.lower() == "l":
+            print(INVALID_MENU_MESSAGE)
+            continue
+
+        try:
+            value = int(raw_value)
+        except ValueError:
+            print(INVALID_NUMBER_MESSAGE)
+            continue
+
+        if minimum is not None and value < minimum:
+            print(f"Number must be at least {minimum}.")
+            continue
+        if maximum is not None and value > maximum:
+            print(f"Number must be at most {maximum}.")
+            continue
+
+        return value
+
+
+def read_text(prompt, allow_empty=False):
+    while True:
+        value = safe_input(prompt).strip()
+        if value or allow_empty:
+            return value
+        print("Please enter a value.")
+
+
+# =========================
+# MediBridge Data Structures
+# =========================
+
+@dataclass
+class User:
+    username: str
+    password: str
+    role: str
+
+
+users = []
+
+
+def login(username, password, role):
+    for user in users:
+        if user.username == username and user.password == password and user.role == role:
+            return True
+    return False
+
+
+def signup():
+    username = read_text("Enter username: ")
+    password = read_text("Enter password: ")
+    role = read_text("Enter role (admin/doctor/staff): ")
+    users.append(User(username, password, role))
+    print("Signup successful!")
+
+
+@dataclass
+class Patient:
+    id: int
+    name: str
+    age: int
+    address: str
+    city: str
+    province: str
+    diagnosis: str
+    next: object = None
+
+
+patientHead = None
+
+pakCities = [
+    "Karachi", "Lahore", "Islamabad", "Peshawar",
+    "Quetta", "Multan", "Faisalabad", "Rawalpindi"
+]
+
+pakProvinces = [
+    "Sindh", "Punjab", "KPK",
+    "Balochistan", "Islamabad Capital Territory"
+]
+
+diagnoses = [
+    "Dengue", "Malaria", "Hepatitis A", "Hepatitis B",
+    "Diabetes", "Hypertension", "Thalassemia", "COVID-19",
+    "Asthma", "Tuberculosis", "Heart Disease", "Kidney Failure",
+    "Cancer", "Pneumonia", "Typhoid", "Anemia"
+]
+
+symptoms = [
+    "Fever", "Cough", "Fatigue", "Headache", "Nausea",
+    "Vomiting", "Jaundice", "Weight Loss", "Shortness of Breath",
+    "Chest Pain", "Abdominal Pain", "Joint Pain", "Rash",
+    "Swelling", "Seizures", "Dizziness"
+]
+
+
+def choose_from_list(items, title):
+    print(title)
+    for index, item in enumerate(items, 1):
+        print(f"{index}. {item}")
+
+    while True:
+        choice = read_int("Enter number: ", minimum=1, maximum=len(items))
+        return items[choice - 1]
+
+
+def addPatient():
+    global patientHead
+
+    pid = read_int("Enter patient id: ")
+    name = read_text("Enter name: ")
+    age = read_int("Enter age: ")
+    address = read_text("Enter address: ")
+
+    city = choose_from_list(pakCities, "Select city:")
+    province = choose_from_list(pakProvinces, "Select province:")
+    diagnosis = choose_from_list(diagnoses, "Select diagnosis:")
+
+    patientHead = Patient(pid, name, age, address, city, province, diagnosis, patientHead)
+    print("Patient added!")
+
+
+def updatePatient():
+    global patientHead
+
+    pid = read_int("Enter patient id to update: ")
+    current = patientHead
+
+    while current:
+        if current.id == pid:
+            current.name = read_text("Enter new name: ")
+            current.age = read_int("Enter new age: ")
+            current.address = read_text("Enter new address: ")
+            current.city = choose_from_list(pakCities, "Select new city:")
+            current.province = choose_from_list(pakProvinces, "Select new province:")
+            current.diagnosis = choose_from_list(diagnoses, "Select new diagnosis:")
+            print("Updated!")
+            return
+        current = current.next
+
+    print("Patient not found.")
+
+
+def deletePatient():
+    global patientHead
+
+    pid = read_int("Enter patient id to delete: ")
+    current = patientHead
+    previous = None
+
+    while current:
+        if current.id == pid:
+            if previous:
+                previous.next = current.next
+            else:
+                patientHead = current.next
+            print("Deleted!")
+            return
+
+        previous = current
+        current = current.next
+
+    print("Patient not found.")
+
+
+def printPatients():
+    current = patientHead
+    print("Patients:")
+
+    while current:
+        print(
+            f"{current.id}: {current.name}, Age: {current.age}, Address: {current.address}, "
+            f"City: {current.city}, Province: {current.province}, Diagnosis: {current.diagnosis}"
+        )
+        current = current.next
+
+
+def toVector():
+    result = []
+    current = patientHead
+
+    while current:
+        result.append(current)
+        current = current.next
+
+    return result
+
+
+def sortPatientsByName():
+    patients = toVector()
+    patients.sort(key=lambda patient: patient.name)
+
+    print("Sorted by name:")
+    for patient in patients:
+        print(f"{patient.id}: {patient.name}, Age: {patient.age}")
+
+
+def searchPatientById():
+    patients = toVector()
+    patients.sort(key=lambda patient: patient.id)
+
+    pid = read_int("Enter id to search: ")
+
+    left = 0
+    right = len(patients) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if patients[mid].id == pid:
+            print(f"Found: {patients[mid].name}, Age: {patients[mid].age}")
+            return
+        if patients[mid].id < pid:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    print("Not found.")
+
+
+# =========================
+# Donor AVL Tree
+# =========================
+
+@dataclass
+class Donor:
+    id: int
+    name: str
+    organ: str
+    bloodGroup: str
+    healthCondition: str
+    canDonate: bool
+    left: object = None
+    right: object = None
+    height: int = 1
+
+
+donorRoot = None
+
+bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+
+healthConditions = [
+    "Healthy", "Diabetic", "Hepatitis B Carrier",
+    "Hepatitis C Carrier", "Hypertensive", "Cancer Survivor",
+    "Asthmatic", "Heart Disease", "Kidney Disease", "Liver Disease"
+]
+
+
+def height(node):
+    return node.height if node else 0
+
+
+def balance(node):
+    return height(node.left) - height(node.right) if node else 0
+
+
+def rightRotate(y):
+    x = y.left
+    t2 = x.right
+
+    x.right = y
+    y.left = t2
+
+    y.height = max(height(y.left), height(y.right)) + 1
+    x.height = max(height(x.left), height(x.right)) + 1
+
+    return x
+
+
+def leftRotate(x):
+    y = x.right
+    t2 = y.left
+
+    y.left = x
+    x.right = t2
+
+    x.height = max(height(x.left), height(x.right)) + 1
+    y.height = max(height(y.left), height(y.right)) + 1
+
+    return y
+
+
+def insertDonor(node, donor_id, name, organ, blood_group, health_condition, can_donate):
+    if node is None:
+        return Donor(donor_id, name, organ, blood_group, health_condition, can_donate)
+
+    if donor_id < node.id:
+        node.left = insertDonor(node.left, donor_id, name, organ, blood_group, health_condition, can_donate)
+    elif donor_id > node.id:
+        node.right = insertDonor(node.right, donor_id, name, organ, blood_group, health_condition, can_donate)
+    else:
+        return node
+
+    node.height = 1 + max(height(node.left), height(node.right))
+    balance_value = balance(node)
+
+    if balance_value > 1 and donor_id < node.left.id:
+        return rightRotate(node)
+
+    if balance_value < -1 and donor_id > node.right.id:
+        return leftRotate(node)
+
+    if balance_value > 1 and donor_id > node.left.id:
+        node.left = leftRotate(node.left)
+        return rightRotate(node)
+
+    if balance_value < -1 and donor_id < node.right.id:
+        node.right = rightRotate(node.right)
+        return leftRotate(node)
+
+    return node
+
+
+def isHealthEligible(health_condition, organ):
+    del organ
+    return health_condition not in NOT_ELIGIBLE_DONOR_CONDITIONS
+
+
+def isOrganFresh(organ, hours_since_death):
+    max_hours = ORGAN_FRESHNESS_RULES.get(organ, 6)
+    return hours_since_death <= max_hours
+
+
+def addDonor():
+    global donorRoot
+
+    donor_id = read_int("Enter donor id: ")
+    name = read_text("Enter name: ")
+    organ = read_text("Enter organ: ")
+
+    blood_group = choose_from_list(bloodGroups, "Select blood group:")
+    health_condition = choose_from_list(healthConditions, "Select health condition:")
+
+    is_deceased = read_int("Is the donor deceased? (1=Yes, 0=No): ", minimum=0, maximum=1)
+    can_donate = True
+
+    if not isHealthEligible(health_condition, organ):
+        print("Donor is NOT eligible to donate due to health condition:", health_condition)
+        can_donate = False
+
+    if is_deceased:
+        hours_since_death = read_int("How many hours since death? ")
+
+        if not isOrganFresh(organ, hours_since_death):
+            print(f"Organ is NOT fresh enough for donation ({hours_since_death} hours since death).")
+            can_donate = False
+        else:
+            print("Organ is fresh and can be considered for donation.")
+
+    donorRoot = insertDonor(donorRoot, donor_id, name, organ, blood_group, health_condition, can_donate)
+    print("Donor added!")
+
+    if can_donate:
+        days_until_operation = read_int("How many days until operation? ")
+        print(f"Operation scheduled in {days_until_operation} day(s).")
+
+
+def printDonors(node):
+    if not node:
+        return
+
+    printDonors(node.left)
+    print(
+        f"{node.id}: {node.name}, Organ: {node.organ}, "
+        f"Blood Group: {node.bloodGroup}, Health: {node.healthCondition}, "
+        f"Eligible: {'Yes' if node.canDonate else 'No'}"
+    )
+    printDonors(node.right)
+
+
+# =========================
+# Receiver Queues
+# =========================
+
+@dataclass
+class Receiver:
+    id: int
+    priority: int
+    name: str
+    organ: str
+    bloodGroup: str
+
+
+receiverQ = deque()
+receiverPQ = []
+
+
+def addReceiver():
+    receiver_id = read_int("Enter receiver id: ")
+    name = read_text("Enter name: ")
+    organ = read_text("Enter organ: ")
+
+    blood_group = choose_from_list(bloodGroups, "Select blood group:")
+    priority = read_int("Enter priority (higher=more urgent): ")
+
+    receiver = Receiver(receiver_id, priority, name, organ, blood_group)
+
+    receiverQ.append(receiver)
+    heapq.heappush(receiverPQ, (-priority, receiver_id, receiver))
+
+    print("Receiver added!")
+
+
+def printReceivers():
+    print("Receivers (FIFO):")
+
+    for receiver in receiverQ:
+        print(
+            f"{receiver.id}: {receiver.name}, Organ: {receiver.organ}, "
+            f"Blood Group: {receiver.bloodGroup}, Priority: {receiver.priority}"
+        )
+
+
+def printReceiversByPriority():
+    print("Receivers (by priority):")
+
+    heap = list(receiverPQ)
+    heapq.heapify(heap)
+
+    while heap:
+        _, _, receiver = heapq.heappop(heap)
+        print(
+            f"{receiver.id}: {receiver.name}, Organ: {receiver.organ}, "
+            f"Blood Group: {receiver.bloodGroup}, Priority: {receiver.priority}"
+        )
+
+
+# =========================
+# Organ Matching Graph
+# =========================
+
+organGraph = {}
+
+
+def addMatch():
+    donor_id = read_int("Enter donor id: ")
+    receiver_id = read_int("Enter receiver id: ")
+
+    organGraph.setdefault(donor_id, []).append(receiver_id)
+    print("Match added!")
+
+
+def bfsMatches(donor_id):
+    print(f"Receivers matched with donor {donor_id}:", end=" ")
+
+    for receiver_id in organGraph.get(donor_id, []):
+        print(receiver_id, end=" ")
+
+    print()
+
+
+# =========================
+# Doctors
+# =========================
+
+@dataclass
+class Doctor:
+    name: str
+    address: str
+    city: str
+    hospital: str
+
+
+symptomToDoctor = {}
+
+pakHospitals = [
+    "Aga Khan University Hospital",
+    "Shaukat Khanum",
+    "Jinnah Hospital",
+    "Services Hospital",
+    "PIMS",
+    "Lady Reading Hospital",
+    "Civil Hospital Karachi",
+    "Mayo Hospital"
+]
+
+
+def assignDoctor():
+    symptom = read_text("Enter disease/symptom: ")
+    name = read_text("Enter doctor name: ")
+    address = read_text("Enter doctor address: ")
+
+    city = choose_from_list(pakCities, "Select city:")
+    hospital = choose_from_list(pakHospitals, "Select hospital:")
+
+    symptomToDoctor[symptom] = Doctor(name, address, city, hospital)
+    print("Doctor assigned!")
+
+
+def findDoctor():
+    symptom = read_text("Enter disease/symptom: ")
+
+    if symptom in symptomToDoctor:
+        doctor = symptomToDoctor[symptom]
+        print(
+            f"Doctor: {doctor.name}, Address: {doctor.address}, "
+            f"City: {doctor.city}, Hospital: {doctor.hospital}"
+        )
+    else:
+        print("No doctor assigned.")
+
+
+def addSampleDoctors():
+    symptomToDoctor["Dengue"] = Doctor(
+        "Dr. Ayesha Khan", "Street 12, DHA",
+        "Karachi", "Aga Khan University Hospital"
+    )
+
+    symptomToDoctor["Malaria"] = Doctor(
+        "Dr. Imran Ali", "Model Town",
+        "Lahore", "Shaukat Khanum"
+    )
+
+    symptomToDoctor["Hepatitis"] = Doctor(
+        "Dr. Sara Ahmed", "G-10",
+        "Islamabad", "PIMS"
+    )
+
+    symptomToDoctor["Diabetes"] = Doctor(
+        "Dr. Bilal Siddiqui", "Cantt Area",
+        "Multan", "Civil Hospital Karachi"
+    )
+
+    symptomToDoctor["Hypertension"] = Doctor(
+        "Dr. Rabia Noor", "Satellite Town",
+        "Quetta", "Jinnah Hospital"
+    )
+
+    symptomToDoctor["Thalassemia"] = Doctor(
+        "Dr. Usman Tariq", "F-8",
+        "Islamabad", "PIMS"
+    )
+
+    symptomToDoctor["COVID-19"] = Doctor(
+        "Dr. Nadia Shah", "Gulberg",
+        "Lahore", "Services Hospital"
+    )
+
+    symptomToDoctor["Asthma"] = Doctor(
+        "Dr. Kamran Aziz", "University Road",
+        "Peshawar", "Lady Reading Hospital"
+    )
+
+    symptomToDoctor["Tuberculosis"] = Doctor(
+        "Dr. Hina Qureshi", "Saddar",
+        "Rawalpindi", "Mayo Hospital"
+    )
+
+    symptomToDoctor["Heart Disease"] = Doctor(
+        "Dr. Salman Raza", "Clifton",
+        "Karachi", "Aga Khan University Hospital"
+    )
+
+
+# =========================
+# Appointments
+# =========================
+
+@dataclass
+class Appointment:
+    id: int
+    patientName: str
+    doctorName: str
+    next: object = None
+
+
+apptHead = None
+apptQ = deque()
+
+
+def bookAppointment():
+    global apptHead
+
+    appointment_id = read_int("Enter appointment id: ")
+    patient_name = read_text("Enter patient name: ")
+    doctor_name = read_text("Enter doctor name: ")
+
+    appointment = Appointment(appointment_id, patient_name, doctor_name, apptHead)
+
+    apptHead = appointment
+    apptQ.append(appointment)
+
+    print("Appointment booked!")
+
+
+def printAppointments():
+    current = apptHead
+    print("Appointments:")
+
+    while current:
+        print(f"{current.id}: {current.patientName} with Dr. {current.doctorName}")
+        current = current.next
+
+
+# =========================
+# Medical Logs BST
+# =========================
+
+@dataclass
+class Log:
+    id: int
+    details: str
+    left: object = None
+    right: object = None
+
+
+logRoot = None
+
+
+def insertLog(node, log_id, details):
+    if node is None:
+        return Log(log_id, details)
+
+    if log_id < node.id:
+        node.left = insertLog(node.left, log_id, details)
+    elif log_id > node.id:
+        node.right = insertLog(node.right, log_id, details)
+
+    return node
+
+
+def addLog():
+    global logRoot
+
+    log_id = read_int("Enter log id: ")
+    details = read_text("Enter details: ")
+
+    logRoot = insertLog(logRoot, log_id, details)
+    print("Log added!")
+
+
+def printLogs(node):
+    if not node:
+        return
+
+    printLogs(node.left)
+    print(f"{node.id}: {node.details}")
+    printLogs(node.right)
+
+
+# =========================
+# Undo Stack
+# =========================
+
+actionStack = []
+
+
+def undoLastAction():
+    if not actionStack:
+        print("No actions to undo.")
+        return
+
+    print("Undoing:", actionStack.pop())
+
+
+# =========================
+# Sorting & Searching
+# =========================
+
+def bubbleSort(arr):
+    for i in range(len(arr)):
+        for j in range(len(arr) - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+
+
+def insertionSort(arr):
+    for index in range(1, len(arr)):
+        key = arr[index]
+        position = index - 1
+
+        while position >= 0 and arr[position] > key:
+            arr[position + 1] = arr[position]
+            position -= 1
+
+        arr[position + 1] = key
+
+
+def selectionSort(arr):
+    for i in range(len(arr)):
+        min_index = i
+
+        for j in range(i + 1, len(arr)):
+            if arr[j] < arr[min_index]:
+                min_index = j
+
+        arr[i], arr[min_index] = arr[min_index], arr[i]
+
+
+def binarySearch(arr, value):
+    left = 0
+    right = len(arr) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if arr[mid] == value:
+            return mid
+        if arr[mid] < value:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    return -1
+
+
+def searchSortDemo():
+    original = [5, 2, 9, 1, 7]
+
+    print("Original:", *original)
+
+    arr = original.copy()
+    bubbleSort(arr)
+    print("Bubble sorted:", *arr)
+
+    arr = original.copy()
+    insertionSort(arr)
+    print("Insertion sorted:", *arr)
+
+    arr = original.copy()
+    selectionSort(arr)
+    print("Selection sorted:", *arr)
+
+    search_value = read_int("Enter number to search: ")
+    index = binarySearch(arr, search_value)
+
+    if index != -1:
+        print(f"Found at index {index}")
+    else:
+        print("Not found.")
+
+
+# =========================
+# Alerts
+# =========================
+
+alerts = {}
+alertStack = []
+
+
+def addAlert():
+    key = read_text("Enter alert key: ")
+    message = read_text("Enter alert message: ")
+
+    alerts[key] = message
+    alertStack.append(message)
+
+    print("Alert added!")
+
+
+def showAlerts():
+    print("Alerts (latest on top):")
+
+    for message in reversed(alertStack):
+        print(message)
+
+
+# =========================
+# Admin Dashboard
+# =========================
+
+def countPatients():
+    count = 0
+    current = patientHead
+
+    while current:
+        count += 1
+        current = current.next
+
+    return count
+
+
+def countDonors(node):
+    if not node:
+        return 0
+
+    return 1 + countDonors(node.left) + countDonors(node.right)
+
+
+def countLogs(node):
+    if not node:
+        return 0
+
+    return 1 + countLogs(node.left) + countLogs(node.right)
+
+
+def adminDashboard():
+    print("--- Admin Dashboard ---")
+    print("Total users:", len(users))
+    print("Total patients:", countPatients())
+    print("Total donors:", countDonors(donorRoot))
+    print("Total receivers:", len(receiverQ))
+    print("Total appointments:", len(apptQ))
+    print("Total logs:", countLogs(logRoot))
+    print("--- End Dashboard ---")
+
+
+# =========================
+# Donor/Receiver Matching
+# =========================
+
+def isCompatible(donor_bg, receiver_bg):
+    if donor_bg == receiver_bg:
+        return True
+
+    if donor_bg in ("O-", "O+"):
+        return True
+
+    if receiver_bg in ("AB+", "AB-"):
+        return True
+
+    return False
+
+
+def collectDonors(node, result):
+    if not node:
+        return
+
+    result.append(node)
+    collectDonors(node.left, result)
+    collectDonors(node.right)
+
+
+def matchDonorsWithReceivers():
+    donors = []
+    collectDonors(donorRoot, donors)
+
+    print("\n--- Donor-Receiver Matches ---")
+
+    for donor in donors:
+        if not donor.canDonate:
+            continue
+
+        for receiver in receiverQ:
+            if donor.organ == receiver.organ and isCompatible(donor.bloodGroup, receiver.bloodGroup):
+                print(
+                    f"Donor {donor.name} "
+                    f"({donor.organ}, {donor.bloodGroup}) "
+                    f"matches with Receiver {receiver.name} "
+                    f"({receiver.organ}, {receiver.bloodGroup})"
+                )
+
+    print("--- End Matches ---")
+
+
+# =========================
+# User / Doctor / Patient Lists
+# =========================
+
+def deleteUser():
+    username = read_text("Enter username to delete: ")
+
+    for index, user in enumerate(users):
+        if user.username == username:
+            users.pop(index)
+            print("User deleted!")
+            return
+
+    print("User not found.")
+
+
+def listUsers():
+    print("All Users:")
+
+    for user in users:
+        print(f"Username: {user.username}, Role: {user.role}")
+
+
+def listDoctors():
+    print("All Doctors:")
+
+    for disease, doctor in symptomToDoctor.items():
+        print(
+            f"Disease: {disease}, Doctor: {doctor.name}, "
+            f"City: {doctor.city}, Hospital: {doctor.hospital}"
+        )
+
+
+def listPatientsByCity():
+    city = read_text("Enter city: ")
+    current = patientHead
+
+    print(f"Patients in {city}:")
+
+    while current:
+        if current.city == city:
+            print(f"{current.id}: {current.name}, Diagnosis: {current.diagnosis}")
+        current = current.next
+
+
+def listDonorsByOrganHelper(node, organ):
+    if not node:
+        return
+
+    listDonorsByOrganHelper(node.left, organ)
+
+    if node.organ == organ:
+        print(
+            f"{node.id}: {node.name}, "
+            f"Blood Group: {node.bloodGroup}, "
+            f"Eligible: {'Yes' if node.canDonate else 'No'}"
+        )
+
+    listDonorsByOrganHelper(node.right, organ)
+
+
+def listDonorsByOrgan():
+    organ = read_text("Enter organ: ")
+    print(f"Donors for organ {organ}:")
+    listDonorsByOrganHelper(donorRoot, organ)
+
+
+# =========================
+# AVL Delete / Search
+# =========================
+
+def minValueNode(node):
+    current = node
+
+    while current and current.left:
+        current = current.left
+
+    return current
+
+
+def deleteDonor(root, donor_id):
+    if not root:
+        return root
+
+    if donor_id < root.id:
+        root.left = deleteDonor(root.left, donor_id)
+    elif donor_id > root.id:
+        root.right = deleteDonor(root.right, donor_id)
+    else:
+        if not root.left:
+            return root.right
+
+        if not root.right:
+            return root.left
+
+        temp = minValueNode(root.right)
+
+        root.id = temp.id
+        root.name = temp.name
+        root.organ = temp.organ
+        root.bloodGroup = temp.bloodGroup
+        root.healthCondition = temp.healthCondition
+        root.canDonate = temp.canDonate
+
+        root.right = deleteDonor(root.right, temp.id)
+
+    root.height = 1 + max(height(root.left), height(root.right))
+    balance_value = balance(root)
+
+    if balance_value > 1 and balance(root.left) >= 0:
+        return rightRotate(root)
+
+    if balance_value > 1 and balance(root.left) < 0:
+        root.left = leftRotate(root.left)
+        return rightRotate(root)
+
+    if balance_value < -1 and balance(root.right) <= 0:
+        return leftRotate(root)
+
+    if balance_value < -1 and balance(root.right) > 0:
+        root.right = rightRotate(root.right)
+        return leftRotate(root)
+
+    return root
+
+
+def searchDonor(node, donor_id):
+    if not node:
+        return None
+
+    if node.id == donor_id:
+        return node
+
+    if donor_id < node.id:
+        return searchDonor(node.left, donor_id)
+
+    return searchDonor(node.right, donor_id)
+
+
+def avlHeight(node):
+    return height(node)
+
+
+def countEligibleDonors(node):
+    if not node:
+        return 0
+
+    return (1 if node.canDonate else 0) + countEligibleDonors(node.left) + countEligibleDonors(node.right)
+
+
+def countDonorsByOrgan(node, organ):
+    if not node:
+        return 0
+
+    return (1 if node.organ == organ else 0) + countDonorsByOrgan(node.left, organ) + countDonorsByOrgan(node.right, organ)
+
+
+def deleteDonorMenu():
+    global donorRoot
+
+    donor_id = read_int("Enter donor id to delete: ")
+    donorRoot = deleteDonor(donorRoot, donor_id)
+    print("Donor deleted (if existed).")
+
+
+def searchDonorMenu():
+    donor_id = read_int("Enter donor id to search: ")
+    donor = searchDonor(donorRoot, donor_id)
+
+    if donor:
+        print(
+            f"Found Donor: {donor.name}, Organ: {donor.organ}, "
+            f"Blood Group: {donor.bloodGroup}, "
+            f"Health: {donor.healthCondition}, "
+            f"Eligible: {'Yes' if donor.canDonate else 'No'}"
+        )
+    else:
+        print("Donor not found.")
+
+
+def printAvlHeight():
+    print("Donor AVL Tree Height:", avlHeight(donorRoot))
+
+
+def printEligibleDonorCount():
+    print("Eligible Donors:", countEligibleDonors(donorRoot))
+
+
+def printDonorCountByOrgan():
+    organ = read_text("Enter organ: ")
+    print(f"Donors for organ {organ}: {countDonorsByOrgan(donorRoot, organ)}")
+
+
+# =========================
+# Menu
+# =========================
+
+MENU_ITEMS = [
+    "1. Signup",
+    "2. Login",
+    "3. Add Patient",
+    "4. Update Patient",
+    "5. Delete Patient",
+    "6. Print Patients",
+    "7. Sort Patients by Name",
+    "8. Search Patient by ID",
+    "9. Add Donor",
+    "10. Print Donors",
+    "11. Add Receiver",
+    "12. Print Receivers",
+    "13. Print Receivers by Priority",
+    "14. Add Organ Match",
+    "15. Show Donor Matches",
+    "16. Assign Doctor",
+    "17. Find Doctor",
+    "18. Book Appointment",
+    "19. Print Appointments",
+    "20. Add Medical Log",
+    "21. Print Medical Logs",
+    "22. Undo Last Action",
+    "23. Search & Sort Demo",
+    "24. Add Alert",
+    "25. Show Alerts",
+    "26. Admin Dashboard",
+    "27. Match Donors & Receivers",
+    "28. Delete User",
+    "29. List All Users",
+    "30. List All Doctors",
+    "31. List Patients by City",
+    "32. List Donors by Organ",
+    "33. Delete Donor",
+    "34. Search Donor by ID",
+    "35. Print Donor AVL Height",
+    "36. Count Eligible Donors",
+    "37. Count Donors by Organ",
+    "0. Exit",
+]
+
+
+def printMenu():
+    print("\n--- MediBridge Menu ---")
+    for item in MENU_ITEMS:
+        print(item)
+
+
+def recordAction(label, action):
+    action()
+    actionStack.append(label)
+
+
+def handleSignup():
+    recordAction("Signup", signup)
+
+
+def handleLogin():
+    username = read_text("Username: ")
+    password = read_text("Password: ")
+    role = read_text("Role: ")
+
+    if login(username, password, role):
+        print("Login successful!")
+    else:
+        print("Login failed.")
+
+    actionStack.append("Login")
+
+
+def handlePatientMatchLookup():
+    donor_id = read_int("Enter donor id: ")
+    bfsMatches(donor_id)
+
+
+def getMenuActions():
+    return {
+        1: handleSignup,
+        2: handleLogin,
+        3: lambda: recordAction("Add Patient", addPatient),
+        4: lambda: recordAction("Update Patient", updatePatient),
+        5: lambda: recordAction("Delete Patient", deletePatient),
+        6: printPatients,
+        7: sortPatientsByName,
+        8: searchPatientById,
+        9: lambda: recordAction("Add Donor", addDonor),
+        10: lambda: printDonors(donorRoot),
+        11: lambda: recordAction("Add Receiver", addReceiver),
+        12: printReceivers,
+        13: printReceiversByPriority,
+        14: lambda: recordAction("Add Match", addMatch),
+        15: handlePatientMatchLookup,
+        16: lambda: recordAction("Assign Doctor", assignDoctor),
+        17: findDoctor,
+        18: lambda: recordAction("Book Appointment", bookAppointment),
+        19: printAppointments,
+        20: lambda: recordAction("Add Log", addLog),
+        21: lambda: printLogs(logRoot),
+        22: undoLastAction,
+        23: searchSortDemo,
+        24: lambda: recordAction("Add Alert", addAlert),
+        25: showAlerts,
+        26: adminDashboard,
+        27: matchDonorsWithReceivers,
+        28: lambda: recordAction("Delete User", deleteUser),
+        29: listUsers,
+        30: listDoctors,
+        31: listPatientsByCity,
+        32: listDonorsByOrgan,
+        33: lambda: recordAction("Delete Donor", deleteDonorMenu),
+        34: searchDonorMenu,
+        35: printAvlHeight,
+        36: printEligibleDonorCount,
+        37: printDonorCountByOrgan,
+    }
+
+
+def menu():
+    while True:
+        printMenu()
+        choice = read_int("Choose: ", minimum=0, maximum=37)
+
+        if choice == 0:
+            return
+
+        action = getMenuActions().get(choice)
+        if action is None:
+            print(INVALID_MENU_MESSAGE)
+            continue
+
+        action()
+
+
+def main():
+    print("Welcome to MediBridge Blood Donation and Organ Matchmaking System!")
+
+    addSampleDoctors()
+    menu()
+
+    print("Goodbye!")
+
+
+if __name__ == "__main__":
+    main()
